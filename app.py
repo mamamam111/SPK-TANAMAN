@@ -25,7 +25,12 @@ from sklearn.metrics import (
     classification_report, confusion_matrix, silhouette_score
 )
 from sklearn.decomposition import PCA
-import xgboost as xgb
+try:
+    import xgboost as xgb
+    XGBOOST_OK = True
+except ImportError:
+    XGBOOST_OK = False
+    xgb = None
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -283,52 +288,68 @@ def muat_data():
 
 
 @st.cache_resource
-def latih_semua(_df):
+def latih_rf(_df):
+    """Train ONLY Random Forest — fast startup."""
     X = _df[FITUR]; y = _df["label"]
     X_tr,X_te,y_tr,y_te = train_test_split(X,y,test_size=.2,random_state=42,stratify=y)
     sc = StandardScaler()
     X_trs = sc.fit_transform(X_tr); X_tes = sc.transform(X_te)
 
-    # Semua 6 model
+    rf = RandomForestClassifier(n_estimators=200,random_state=42,n_jobs=-1)
+    rf.fit(X_trs, y_tr)
+
+    y_pred = rf.predict(X_tes)
+    acc    = accuracy_score(y_te, y_pred)
+    f1     = f1_score(y_te, y_pred, average="weighted", zero_division=0)
+    cvs    = cross_val_score(rf, sc.transform(X), y, cv=5)
+    cm     = confusion_matrix(y_te, y_pred, labels=rf.classes_)
+    fi     = rf.feature_importances_
+
+    return rf, sc, acc, f1, cvs, cm, fi, rf.classes_
+
+
+@st.cache_resource
+def latih_semua_model(_df):
+    """Train all 6 models — only called on Analisis page."""
+    X = _df[FITUR]; y = _df["label"]
+    X_tr,X_te,y_tr,y_te = train_test_split(X,y,test_size=.2,random_state=42,stratify=y)
+    sc = StandardScaler()
+    X_trs = sc.fit_transform(X_tr); X_tes = sc.transform(X_te)
+
+    le = LabelEncoder()
+    y_tr_enc = le.fit_transform(y_tr); y_te_enc = le.transform(y_te)
+
     models = {
         "Decision Tree":       DecisionTreeClassifier(criterion="entropy",max_depth=5,random_state=42),
         "Naive Bayes":         GaussianNB(),
-        "SVM":                 SVC(gamma="auto",probability=True,random_state=42),
         "Logistic Regression": LogisticRegression(max_iter=1000,random_state=42),
         "Random Forest":       RandomForestClassifier(n_estimators=200,random_state=42,n_jobs=-1),
-        "XGBoost":             None,  # handled separately
     }
-    le = LabelEncoder(); y_tr_enc = le.fit_transform(y_tr); y_te_enc = le.transform(y_te)
+    if XGBOOST_OK:
+        models["XGBoost"] = xgb.XGBClassifier(
+            use_label_encoder=False, eval_metric="mlogloss", random_state=42, n_jobs=-1)
 
     hasil = {}
-    trained = {}
     for nama, m in models.items():
         if nama == "XGBoost":
-            m = xgb.XGBClassifier(use_label_encoder=False,eval_metric="mlogloss",random_state=42,n_jobs=-1)
             m.fit(X_trs, y_tr_enc)
-            yp = m.predict(X_tes)
+            yp  = m.predict(X_tes)
             acc = accuracy_score(y_te_enc, yp)
-            prec= precision_score(y_te_enc,yp,average="weighted",zero_division=0)
+            pr  = precision_score(y_te_enc,yp,average="weighted",zero_division=0)
             rec = recall_score(y_te_enc,yp,average="weighted",zero_division=0)
             f1  = f1_score(y_te_enc,yp,average="weighted",zero_division=0)
             cvs = cross_val_score(m, sc.transform(X), le.transform(y), cv=5)
         else:
             m.fit(X_trs, y_tr)
-            yp = m.predict(X_tes)
+            yp  = m.predict(X_tes)
             acc = accuracy_score(y_te, yp)
-            prec= precision_score(y_te,yp,average="weighted",zero_division=0)
+            pr  = precision_score(y_te,yp,average="weighted",zero_division=0)
             rec = recall_score(y_te,yp,average="weighted",zero_division=0)
             f1  = f1_score(y_te,yp,average="weighted",zero_division=0)
             cvs = cross_val_score(m, sc.transform(X), y, cv=5)
-
-        hasil[nama]  = {"acc":acc,"prec":prec,"rec":rec,"f1":f1,
-                        "cv_mean":cvs.mean(),"cv_std":cvs.std()}
-        trained[nama]= m
-
-    rf  = trained["Random Forest"]
-    fi  = rf.feature_importances_
-    cm  = confusion_matrix(y_te, trained["Random Forest"].predict(X_tes), labels=rf.classes_)
-    return trained, sc, hasil, fi, cm, rf.classes_, le
+        hasil[nama] = {"acc":acc,"prec":pr,"rec":rec,"f1":f1,
+                       "cv_mean":cvs.mean(),"cv_std":cvs.std()}
+    return hasil
 
 
 @st.cache_resource
@@ -342,8 +363,9 @@ def latih_cluster(_df, k=4):
 
 
 df            = muat_data()
-trained,sc,hasil_model,fi,cm_rf,kelas,le = latih_semua(df)
-rf_model      = trained["Random Forest"]
+rf_model,sc,rf_acc,rf_f1,cv_scores,cm_rf,fi,kelas = latih_rf(df)
+
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -366,17 +388,16 @@ with st.sidebar:
     ], label_visibility="collapsed")
 
     st.divider()
-    rf_h = hasil_model["Random Forest"]
     st.markdown(f"""
     <div style="font-size:.72rem;color:#86efac;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-    Model Terbaik (RF)</div>
+    Model Utama (RF)</div>
     <div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0">
-        <span style="opacity:.7">Akurasi</span><b style="color:#4ade80">{rf_h["acc"]:.2%}</b></div>
+        <span style="opacity:.7">Akurasi</span><b style="color:#4ade80">{rf_acc:.2%}</b></div>
     <div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0">
-        <span style="opacity:.7">F1-Score</span><b style="color:#4ade80">{rf_h["f1"]:.2%}</b></div>
+        <span style="opacity:.7">F1-Score</span><b style="color:#4ade80">{rf_f1:.2%}</b></div>
     <div style="display:flex;justify-content:space-between;font-size:.8rem;padding:3px 0">
         <span style="opacity:.7">CV 5-fold</span>
-        <b style="color:#4ade80">{rf_h["cv_mean"]:.2%}±{rf_h["cv_std"]:.2%}</b></div>
+        <b style="color:#4ade80">{cv_scores.mean():.2%}±{cv_scores.std():.2%}</b></div>
     <div style="font-size:.72rem;margin-top:10px;opacity:.55">
         📁 {len(df):,} sampel · 22 tanaman · 7 fitur</div>
     """, unsafe_allow_html=True)
@@ -705,7 +726,9 @@ elif menu == "📊  Analisis & Model":
     tab1,tab2,tab3,tab4 = st.tabs(["🏆 Perbandingan 6 Model","🔥 Feature Importance","🔗 Korelasi","📦 Distribusi Data"])
 
     with tab1:
-        # KPI row
+        # Lazy-load semua model hanya saat tab ini dibuka
+        with st.spinner("⏳ Melatih 6 model klasifikasi... (±30 detik, sekali saja)"):
+            hasil_model = latih_semua_model(df)
         c1,c2,c3,c4 = st.columns(4)
         rf_h = hasil_model["Random Forest"]
         c1.markdown(f'<div class="kpi"><div class="kpi-val">{rf_h["acc"]:.2%}</div><div class="kpi-lbl">Akurasi RF</div></div>', unsafe_allow_html=True)
