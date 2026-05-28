@@ -1,655 +1,775 @@
-"""
-SPK Rekomendasi Tanaman — Kelompok 5
-Clean UI: ramah petani + analisis mendalam
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import (
-    accuracy_score, classification_report,
-    confusion_matrix, silhouette_score
+    classification_report, confusion_matrix,
+    accuracy_score, silhouette_score
 )
 from sklearn.decomposition import PCA
 
 import warnings
 warnings.filterwarnings("ignore")
 
-# ──────────────────────────────────────────────────────────────
-# KONFIGURASI HALAMAN
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# CONFIG HALAMAN
+# ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="AgroSPK — Rekomendasi Tanaman",
+    page_title="SPK Rekomendasi Tanaman",
     page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ──────────────────────────────────────────────────────────────
-# CSS
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# CSS CUSTOM
+# ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
-.main { background: #F7FDF9; }
-
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #1B4332 0%, #2D6A4F 60%, #1B4332 100%);
-}
-section[data-testid="stSidebar"] * { color: #D8F3DC !important; }
-
-.hero {
-    background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #40916C 100%);
-    border-radius: 20px; padding: 36px 40px; color: white; margin-bottom: 24px;
-    position: relative; overflow: hidden;
-}
-.hero::after { content:"🌾"; position:absolute; font-size:120px; opacity:.07; right:30px; top:-10px; }
-.hero h1 { font-size: 2rem; font-weight: 800; margin: 0 0 8px; }
-.hero p  { font-size: 1rem; opacity: 0.85; margin: 0; max-width: 560px; }
-
-.hasil-utama {
-    background: linear-gradient(135deg, #1B4332, #2D6A4F);
-    border-radius: 20px; padding: 28px; text-align: center; color: white; margin-bottom: 20px;
-}
-.hasil-emoji { font-size: 3.5rem; display: block; margin-bottom: 6px; }
-.hasil-nama  { font-size: 2rem; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
-.hasil-cocok { font-size: 1rem; opacity: 0.85; margin-top: 4px; }
-.hasil-tag   {
-    display:inline-block; background:rgba(255,255,255,.15);
-    border-radius:20px; padding:4px 14px; font-size:.8rem; margin:8px 4px 0;
-}
-
-.stat-box {
-    background:white; border-radius:12px; padding:16px; text-align:center;
-    border:1px solid #E8F5EE; box-shadow:0 1px 6px rgba(45,106,79,.06);
-}
-.stat-angka { font-size:1.8rem; font-weight:800; color:#2D6A4F; }
-.stat-label { font-size:.75rem; color:#6B7280; margin-top:2px; text-transform:uppercase; letter-spacing:.5px; }
-
-.section-hd {
-    font-size:1.25rem; font-weight:800; color:#1B4332;
-    margin:24px 0 12px; padding-bottom:8px; border-bottom:2px solid #D8F3DC;
-}
-.section-sub { font-size:.83rem; color:#6B7280; margin-bottom:16px; }
-
-.badge-ok   { background:#D8F3DC; color:#1B4332; border-radius:20px; padding:3px 10px; font-size:.75rem; font-weight:600; }
-.badge-warn { background:#FFF3CD; color:#856404; border-radius:20px; padding:3px 10px; font-size:.75rem; font-weight:600; }
-.badge-bad  { background:#FFE0E0; color:#922B21; border-radius:20px; padding:3px 10px; font-size:.75rem; font-weight:600; }
-
-.prob-track { background:#F0FFF4; border-radius:6px; height:10px; overflow:hidden; margin-bottom:10px; }
-.prob-fill  { height:100%; border-radius:6px; }
-
-.tabel-param { width:100%; border-collapse:collapse; font-size:.83rem; }
-.tabel-param th { background:#F0FFF4; color:#1B4332; padding:10px 12px; text-align:left; font-size:.75rem; text-transform:uppercase; }
-.tabel-param td { padding:9px 12px; border-bottom:1px solid #F0FFF4; color:#374151; }
-
-.tips {
-    background:#EBF8F0; border-left:4px solid #40916C;
-    border-radius:0 10px 10px 0; padding:12px 16px;
-    font-size:.83rem; color:#1B4332; margin:8px 0 16px;
-}
-
-.stButton button {
-    background: linear-gradient(135deg, #2D6A4F, #40916C) !important;
-    color: white !important; border: none !important;
-    border-radius: 12px !important; font-weight: 600 !important;
-    font-size: 1rem !important; padding: 12px 24px !important;
-}
-.stButton button:hover {
-    box-shadow: 0 6px 20px rgba(45,106,79,.35) !important;
-    transform: translateY(-1px) !important;
-}
+    .main-title {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #2d6a4f;
+        text-align: center;
+        margin-bottom: 0.2rem;
+    }
+    .sub-title {
+        font-size: 1rem;
+        color: #52796f;
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #d8f3dc, #b7e4c7);
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1b4332;
+    }
+    .metric-label {
+        font-size: 0.85rem;
+        color: #52796f;
+    }
+    .result-box {
+        background: linear-gradient(135deg, #2d6a4f, #40916c);
+        color: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        text-align: center;
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(45,106,79,0.3);
+    }
+    .warning-box {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        border-radius: 8px;
+        padding: 0.8rem 1rem;
+        margin: 0.5rem 0;
+    }
+    .info-box {
+        background: #e7f3ff;
+        border-left: 4px solid #0d6efd;
+        border-radius: 8px;
+        padding: 0.8rem 1rem;
+        margin: 0.5rem 0;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        font-weight: 600;
+    }
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #081c15, #1b4332);
+    }
+    section[data-testid="stSidebar"] * {
+        color: #d8f3dc !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────────────
-# KONSTANTA
-# ──────────────────────────────────────────────────────────────
-FITUR    = ["N","P","K","temperature","humidity","ph","rainfall"]
-F_NAMA   = {"N":"Nitrogen (N)","P":"Fosfor (P)","K":"Kalium (K)",
-            "temperature":"Suhu Udara","humidity":"Kelembaban",
-            "ph":"Keasaman (pH)","rainfall":"Curah Hujan"}
-F_SATUAN = {"N":"ppm","P":"ppm","K":"ppm","temperature":"°C",
-            "humidity":"%","ph":"","rainfall":"mm"}
-F_MIN    = {"N":0,"P":5,"K":5,"temperature":8.0,"humidity":14.0,"ph":3.5,"rainfall":20.0}
-F_MAX    = {"N":140,"P":145,"K":205,"temperature":44.0,"humidity":100.0,"ph":10.0,"rainfall":300.0}
-F_DEF    = {"N":50,"P":53,"K":48,"temperature":25.0,"humidity":71.0,"ph":6.5,"rainfall":100.0}
+# ─────────────────────────────────────────────
+# DATA & MODEL (cache agar tidak reload terus)
+# ─────────────────────────────────────────────
+DATA_PATH = "Crop_recommendation.csv"
 
-TANAMAN = {
-    "rice":{"emoji":"🌾","musim":"Basah","singkat":"Padi sawah, butuh banyak air"},
-    "maize":{"emoji":"🌽","musim":"Kering","singkat":"Jagung, lahan kering"},
-    "chickpea":{"emoji":"🫘","musim":"Dingin","singkat":"Kacang arab, toleran kering"},
-    "kidneybeans":{"emoji":"🫘","musim":"Hangat","singkat":"Kacang merah"},
-    "pigeonpeas":{"emoji":"🌿","musim":"Kering","singkat":"Kacang gude"},
-    "mothbeans":{"emoji":"🌿","musim":"Kering","singkat":"Sangat toleran kering"},
-    "mungbean":{"emoji":"🫛","musim":"Hangat","singkat":"Kacang hijau, siklus pendek"},
-    "blackgram":{"emoji":"🫘","musim":"Hangat","singkat":"Kacang urad, toleran panas"},
-    "lentil":{"emoji":"🫘","musim":"Dingin","singkat":"Lentil, tanah lempung"},
-    "pomegranate":{"emoji":"🍎","musim":"Panas","singkat":"Delima, buah komersial"},
-    "banana":{"emoji":"🍌","musim":"Basah","singkat":"Pisang, kelembaban tinggi"},
-    "mango":{"emoji":"🥭","musim":"Panas","singkat":"Mangga, buah tropis"},
-    "grapes":{"emoji":"🍇","musim":"Panas","singkat":"Anggur, drainase baik"},
-    "watermelon":{"emoji":"🍉","musim":"Panas","singkat":"Semangka, tanah berpasir"},
-    "muskmelon":{"emoji":"🍈","musim":"Panas","singkat":"Melon, sinar matahari penuh"},
-    "apple":{"emoji":"🍏","musim":"Dingin","singkat":"Apel, dataran tinggi"},
-    "orange":{"emoji":"🍊","musim":"Hangat","singkat":"Jeruk, curah hujan teratur"},
-    "papaya":{"emoji":"🍑","musim":"Basah","singkat":"Pepaya, tumbuh cepat"},
-    "coconut":{"emoji":"🥥","musim":"Basah","singkat":"Kelapa, tanah pantai"},
-    "cotton":{"emoji":"🌼","musim":"Panas","singkat":"Kapas, lahan kering"},
-    "jute":{"emoji":"🌿","musim":"Basah","singkat":"Jute/rami"},
-    "coffee":{"emoji":"☕","musim":"Basah","singkat":"Kopi, ketinggian sedang"},
+CROP_INFO = {
+    "rice":        {"emoji": "🌾", "musim": "Basah",  "catatan": "Butuh irigasi baik, tanah sawah"},
+    "maize":       {"emoji": "🌽", "musim": "Kering", "catatan": "Cocok lahan kering, drainase baik"},
+    "chickpea":    {"emoji": "🫘", "musim": "Dingin", "catatan": "Toleran kering, baik untuk rotasi"},
+    "kidneybeans": {"emoji": "🫘", "musim": "Hangat", "catatan": "pH netral, kelembaban sedang"},
+    "pigeonpeas":  {"emoji": "🌿", "musim": "Kering", "catatan": "Toleran kering, nitrogen tinggi"},
+    "mothbeans":   {"emoji": "🌿", "musim": "Kering", "catatan": "Sangat toleran kekeringan"},
+    "mungbean":    {"emoji": "🫛", "musim": "Hangat", "catatan": "Siklus pendek, mudah tumbuh"},
+    "blackgram":   {"emoji": "🫘", "musim": "Hangat", "catatan": "Toleran panas, curah hujan sedang"},
+    "lentil":      {"emoji": "🫘", "musim": "Dingin", "catatan": "Tanah lempung, drainase baik"},
+    "pomegranate": {"emoji": "🍎", "musim": "Panas",  "catatan": "Tahan kering, buah komersil tinggi"},
+    "banana":      {"emoji": "🍌", "musim": "Basah",  "catatan": "Kelembaban tinggi, tanah subur"},
+    "mango":       {"emoji": "🥭", "musim": "Panas",  "catatan": "Buah tropis, musim kering ringan"},
+    "grapes":      {"emoji": "🍇", "musim": "Panas",  "catatan": "pH asam, drainase sangat baik"},
+    "watermelon":  {"emoji": "🍉", "musim": "Panas",  "catatan": "Tanah berpasir, sinar matahari penuh"},
+    "muskmelon":   {"emoji": "🍈", "musim": "Panas",  "catatan": "Musim panas panjang, drainase baik"},
+    "apple":       {"emoji": "🍏", "musim": "Dingin", "catatan": "Dataran tinggi, suhu sejuk"},
+    "orange":      {"emoji": "🍊", "musim": "Hangat", "catatan": "pH asam, curah hujan teratur"},
+    "papaya":      {"emoji": "🍑", "musim": "Basah",  "catatan": "Tumbuh cepat, tanah gembur"},
+    "coconut":     {"emoji": "🥥", "musim": "Basah",  "catatan": "Tanah pantai, kelembaban tinggi"},
+    "cotton":      {"emoji": "🌼", "musim": "Panas",  "catatan": "Lahan kering, drainase baik"},
+    "jute":        {"emoji": "🌿", "musim": "Basah",  "catatan": "Lahan basah, curah hujan tinggi"},
+    "coffee":      {"emoji": "☕", "musim": "Basah",  "catatan": "pH asam, ketinggian sedang"},
 }
 
-# ──────────────────────────────────────────────────────────────
-# LOAD & TRAIN
-# ──────────────────────────────────────────────────────────────
+FITUR_COLS = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
+FITUR_LABEL = {
+    "N": "Nitrogen (N)", "P": "Fosfor (P)", "K": "Kalium (K)",
+    "temperature": "Suhu (°C)", "humidity": "Kelembaban (%)",
+    "ph": "pH Tanah", "rainfall": "Curah Hujan (mm)"
+}
+
 @st.cache_data
-def muat_data():
-    return pd.read_csv("Crop_recommendation.csv")
+def load_data():
+    try:
+        df = pd.read_csv("D:\ITB TEKNIK INDUSTRI\SEMESTER 6\DSS\TUBES\Crop_recommendation.csv",sep=',')
+    except FileNotFoundError:
+        st.error(f" File `{"Crop_recommendation.csv"}` tidak ditemukan. Pastikan file CSV ada di folder yang sama dengan script ini.")
+        st.stop()
+    return df
 
 @st.cache_resource
-def latih_klasifikasi(_df):
-    X = _df[FITUR]; y = _df["label"]
-    X_tr,X_te,y_tr,y_te = train_test_split(X,y,test_size=.2,random_state=42,stratify=y)
-    sc = StandardScaler()
-    X_tr_s = sc.fit_transform(X_tr); X_te_s = sc.transform(X_te)
-    m = RandomForestClassifier(n_estimators=200,random_state=42,n_jobs=-1)
-    m.fit(X_tr_s,y_tr)
-    y_p = m.predict(X_te_s)
-    acc = accuracy_score(y_te,y_p)
-    cm  = confusion_matrix(y_te,y_p,labels=m.classes_)
-    cvs = cross_val_score(m,sc.transform(X),y,cv=5)
-    return m, sc, acc, cm, cvs, m.classes_
+def train_classifier(df):
+    X = df[FITUR_COLS]
+    y = df["label"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    scaler = StandardScaler()
+    X_train_sc = scaler.fit_transform(X_train)
+    X_test_sc  = scaler.transform(X_test)
+
+    model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+    model.fit(X_train_sc, y_train)
+
+    y_pred = model.predict(X_test_sc)
+    acc = accuracy_score(y_test, y_pred)
+    report = classification_report(y_test, y_pred, output_dict=True)
+    cm = confusion_matrix(y_test, y_pred, labels=model.classes_)
+
+    cv_scores = cross_val_score(model, scaler.transform(X), y, cv=5, scoring="accuracy")
+
+    return model, scaler, acc, report, cm, cv_scores, model.classes_, X_test, y_test, y_pred
 
 @st.cache_resource
-def latih_cluster(_df, k=4):
-    X=_df[FITUR]; sc=StandardScaler(); X_s=sc.fit_transform(X)
-    km=KMeans(n_clusters=k,random_state=42,n_init=15); lb=km.fit_predict(X_s)
-    sil=silhouette_score(X_s,lb); pca=PCA(n_components=2,random_state=42)
-    return km, sc, lb, sil, pca.fit_transform(X_s), km.cluster_centers_
+def train_clustering(df, n_clusters=5):
+    X = df[FITUR_COLS]
+    scaler = StandardScaler()
+    X_sc = scaler.fit_transform(X)
 
-def nama_zona(center_raw, idx):
-    N,P,K,temp,hum,ph,rain = center_raw
-    if rain>160 and hum>75: return f"Zona {idx} — Tropis Basah 🌧️"
-    elif rain<80 and hum<55: return f"Zona {idx} — Semi-Kering 🌵"
-    elif K>100 or P>100:     return f"Zona {idx} — Subur Mineral 💎"
-    else:                    return f"Zona {idx} — Komersial Sedang 🌿"
+    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    labels = km.fit_predict(X_sc)
+    sil = silhouette_score(X_sc, labels)
 
-def warna_zona(i):
-    return ["#0EA5E9","#F59E0B","#A855F7","#22C55E","#EF4444","#06B6D4","#F97316","#84CC16"][i%8]
+    pca = PCA(n_components=2, random_state=42)
+    X_pca = pca.fit_transform(X_sc)
 
-def cek_status(nilai, ideal):
-    pct = abs(nilai-ideal)/(ideal+1e-9)*100
-    if pct<=20: return "✅ Sesuai","badge-ok"
-    elif pct<=40: return "⚠️ Perlu Perhatian","badge-warn"
-    else: return "❌ Perlu Perbaikan","badge-bad"
+    return km, scaler, labels, sil, X_pca
 
-def bar_html(pct, warna="#2D6A4F"):
-    return f'<div class="prob-track"><div class="prob-fill" style="width:{pct:.1f}%;background:{warna}"></div></div>'
+# ─────────────────────────────────────────────
+# LOAD DATA
+# ─────────────────────────────────────────────
+df = load_data()
+clf_model, clf_scaler, clf_acc, clf_report, clf_cm, cv_scores, classes, X_test, y_test, y_pred = train_classifier(df)
+importances = clf_model.feature_importances_
 
-df = muat_data()
-model,scaler,akurasi,cm,cv_scores,kelas = latih_klasifikasi(df)
-importances = model.feature_importances_
-
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # SIDEBAR
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🌾 AgroSPK")
-    st.markdown("<small style='opacity:.7'>Rekomendasi Tanaman Berbasis AI<br>Kelompok 5 — DSS</small>",
-                unsafe_allow_html=True)
+    st.markdown("## 🌾 SPK Tanaman")
     st.markdown("---")
-    menu = st.radio("", [
-        "🏠  Beranda",
-        "🌱  Cek Lahan Saya",
-        "🗺️  Peta Zona Lahan",
-        "📊  Analisis Data",
-        "🔬  Analisis Lanjutan",
-    ], label_visibility="collapsed")
+    menu = st.radio(
+        "Navigasi",
+        ["Beranda", "Eksplorasi Data","Klasifikasi", "Clustering", "What-If Analysis", "Sensitivity Analysis"],
+        label_visibility="collapsed"
+    )
     st.markdown("---")
-    st.markdown(f"**Model:** Random Forest (200 pohon)")
-    st.markdown(f"**Akurasi:** `{akurasi:.2%}`")
-    st.markdown(f"**CV 5-fold:** `{cv_scores.mean():.2%} ± {cv_scores.std():.2%}`")
+    st.markdown("### Info Dataset")
+    st.markdown(f"- **{len(df):,}** sampel data")
+    st.markdown(f"- **{df['label'].nunique()}** jenis tanaman")
+    st.markdown(f"- **{len(FITUR_COLS)}** fitur input")
     st.markdown("---")
-    st.markdown(f"📁 **{len(df):,}** sampel · **22** tanaman")
+    st.markdown("### Akurasi Model")
+    st.markdown(f"**Random Forest:** `{clf_acc:.1%}`")
+    st.markdown(f"**CV (5-fold):** `{cv_scores.mean():.1%} ± {cv_scores.std():.2%}`")
 
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN BERANDA ══════════
+# ─────────────────────────────────────────────
+if menu == "Beranda":
+    st.markdown('<div class="main-title">🌾 Sistem Pendukung Keputusan Rekomendasi Tanaman</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Memanfaatkan Data Mining — Klasifikasi & Clustering untuk Optimasi Pertanian</div>', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-# BERANDA
-# ══════════════════════════════════════════════════════════════
-if menu == "🏠  Beranda":
-    st.markdown("""
-    <div class="hero">
-      <h1>Selamat Datang di AgroSPK 🌾</h1>
-      <p>Masukkan kondisi tanah dan iklim lahan Anda — sistem ini merekomendasikan tanaman yang paling
-         cocok berdasarkan data dari 2.200 lahan pertanian.</p>
-    </div>""", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown('<div class="metric-card"><div class="metric-value">2.200</div><div class="metric-label">Total Sampel</div></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(f'<div class="metric-card"><div class="metric-value">22</div><div class="metric-label">Jenis Tanaman</div></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(f'<div class="metric-card"><div class="metric-value">{clf_acc:.1%}</div><div class="metric-label">Akurasi Klasifikasi</div></div>', unsafe_allow_html=True)
+    with c4:
+        st.markdown(f'<div class="metric-card"><div class="metric-value">7</div><div class="metric-label">Fitur Input</div></div>', unsafe_allow_html=True)
 
-    for col, angka, label in zip(st.columns(4),
-        ["2.200","22",f"{akurasi:.0%}","4"],
-        ["Data Lahan Latih","Jenis Tanaman","Akurasi Model","Zona Ekologi"]):
-        col.markdown(f'<div class="stat-box"><div class="stat-angka">{angka}</div>'
-                     f'<div class="stat-label">{label}</div></div>', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 🧩 Arsitektur SPK")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    cl, cr = st.columns(2)
-    with cl:
-        st.markdown("""<div style="background:white;border-radius:16px;padding:24px;border:1px solid #E8F5EE">
-          <h3 style="color:#1B4332;margin:0 0 12px">🎯 Cara Pakai</h3>
-          <ol style="color:#374151;line-height:2.2;font-size:.9rem;padding-left:18px">
-            <li>Buka menu <b>🌱 Cek Lahan Saya</b></li>
-            <li>Geser slider sesuai kondisi tanah & iklim lahan</li>
-            <li>Klik tombol <b>Rekomendasikan</b></li>
-            <li>Lihat 3 tanaman terbaik dan persentase kecocoknya</li>
-            <li>Periksa juga zona ekologi lahan Anda</li>
-          </ol></div>""", unsafe_allow_html=True)
-    with cr:
-        st.markdown("""<div style="background:white;border-radius:16px;padding:24px;border:1px solid #E8F5EE">
-          <h3 style="color:#1B4332;margin:0 0 12px">💡 Fitur Aplikasi</h3>
-          <div style="color:#374151;font-size:.88rem;line-height:2.2">
-            ✅ Rekomendasi 3 tanaman terbaik + persentase kecocokan<br>
-            ✅ Identifikasi zona ekologi lahan secara otomatis<br>
-            ✅ Perbandingan kondisi lahan vs profil ideal tanaman<br>
-            ✅ Simulasi "bagaimana jika" satu parameter diubah<br>
-            ✅ Analisis sensitivitas seluruh parameter sekaligus
-          </div></div>""", unsafe_allow_html=True)
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.markdown("""
+        #### Fitur 1 — Klasifikasi (Random Forest)
+        Memprediksi tanaman paling cocok berdasarkan 7 parameter kondisi lahan:
+        - Kandungan N, P, K dalam tanah
+        - Suhu & kelembaban udara
+        - pH tanah & curah hujan
 
-    st.markdown('<div class="section-hd">🌿 22 Tanaman yang Didukung</div>', unsafe_allow_html=True)
+        **Algoritma:** Random Forest (200 pohon, cross-validated)
+        """)
+        st.markdown("""
+        #### Fitur 3 — What-If Analysis
+        Simulasi "bagaimana jika" parameter diubah — petani dapat menjelajahi
+        dampak perubahan kondisi lahan terhadap rekomendasi.
+        """)
+    with col_r:
+        st.markdown("""
+        #### Fitur 2 — Clustering (K-Means)
+        Mengelompokkan lahan ke dalam klaster berdasarkan kesamaan
+        karakteristik tanah & iklim, untuk strategi manajemen lahan
+        yang lebih tepat sasaran.
+
+        **Algoritma:** K-Means + Silhouette Score + PCA Visualization
+        """)
+        st.markdown("""
+        #### Fitur 4 — Sensitivity Analysis
+        Menganalisis seberapa sensitif rekomendasi terhadap perubahan
+        masing-masing fitur — membantu prioritas intervensi lahan.
+        """)
+
+    st.markdown("---")
+    st.markdown("### 🌿 Tanaman yang Didukung")
     cols = st.columns(6)
-    for i,(nama,info) in enumerate(TANAMAN.items()):
-        with cols[i%6]:
-            st.markdown(f"""<div style="text-align:center;padding:10px 6px;background:white;
-                border-radius:10px;border:1px solid #E8F5EE;margin-bottom:8px">
-              <div style="font-size:1.6rem">{info['emoji']}</div>
-              <div style="font-size:.76rem;font-weight:600;color:#1B4332">{nama.capitalize()}</div>
-              <div style="font-size:.68rem;color:#6B7280">{info['musim']}</div>
-            </div>""", unsafe_allow_html=True)
+    for i, (crop, info) in enumerate(CROP_INFO.items()):
+        with cols[i % 6]:
+            st.markdown(f"**{info['emoji']} {crop.capitalize()}**")
+            st.caption(info["musim"])
 
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN KLASIFIKASI ══════════
+# ─────────────────────────────────────────────
+elif menu == "Klasifikasi":
+    st.markdown("## Fitur 1: Rekomendasi Tanaman (Klasifikasi)")
+    st.markdown("Masukkan kondisi lahan Anda untuk mendapatkan rekomendasi tanaman terbaik.")
 
-# ══════════════════════════════════════════════════════════════
-# CEK LAHAN
-# ══════════════════════════════════════════════════════════════
-elif menu == "🌱  Cek Lahan Saya":
-    st.markdown('<div class="section-hd">🌱 Cek Lahan Saya</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Geser slider sesuai hasil uji tanah dan kondisi iklim lahan Anda.</div>',
-                unsafe_allow_html=True)
+    st.markdown("### ⚙️ Parameter Lahan")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        N = st.slider("Nitrogen (N)", 0, 140, 50, help="Kandungan Nitrogen dalam tanah (kg/ha)")
+        P = st.slider("Fosfor (P)", 5, 145, 53, help="Kandungan Fosfor dalam tanah (kg/ha)")
+        K = st.slider("Kalium (K)", 5, 205, 48, help="Kandungan Kalium dalam tanah (kg/ha)")
+    with col2:
+        temp = st.slider("Suhu (°C)", 8.0, 44.0, 25.0, step=0.5)
+        hum  = st.slider("Kelembaban (%)", 14.0, 100.0, 71.0, step=0.5)
+    with col3:
+        ph       = st.slider("pH Tanah", 3.5, 10.0, 6.5, step=0.1)
+        rainfall = st.slider("Curah Hujan (mm)", 20.0, 300.0, 100.0, step=1.0)
 
-    st.markdown("#### ⚗️ Kondisi Tanah")
-    c1,c2,c3 = st.columns(3)
-    with c1: N = st.slider("🧪 Nitrogen (N) — ppm",0,140,50,help="Kandungan nitrogen, makin tinggi makin subur.")
-    with c2: P = st.slider("🌱 Fosfor (P) — ppm",5,145,53,help="Penting untuk akar dan buah.")
-    with c3: K = st.slider("💧 Kalium (K) — ppm",5,205,48,help="Meningkatkan kualitas dan ketahanan.")
+    if st.button(" Dapatkan Rekomendasi", use_container_width=True, type="primary"):
+        input_arr = np.array([[N, P, K, temp, hum, ph, rainfall]])
+        input_sc  = clf_scaler.transform(input_arr)
+        pred      = clf_model.predict(input_sc)[0]
+        proba     = clf_model.predict_proba(input_sc)[0]
 
-    st.markdown("#### 🌤️ Kondisi Iklim")
-    c4,c5,c6,c7 = st.columns(4)
-    with c4: suhu   = st.slider("🌡️ Suhu (°C)",8.0,44.0,25.0,step=0.5)
-    with c5: lembab = st.slider("💦 Kelembaban (%)",14.0,100.0,71.0,step=0.5)
-    with c6: ph     = st.slider("⚗️ pH Tanah",3.5,10.0,6.5,step=0.1,help="7=netral, <7=asam, >7=basa")
-    with c7: hujan  = st.slider("🌧️ Curah Hujan (mm)",20.0,300.0,100.0,step=1.0)
+        # Top-5 prediksi
+        top5_idx   = np.argsort(proba)[::-1][:5]
+        top5_crops = [(classes[i], proba[i]) for i in top5_idx]
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔍 Rekomendasikan Tanaman untuk Lahan Ini", use_container_width=True):
+        info = CROP_INFO.get(pred, {"emoji": "🌿", "musim": "-", "catatan": "-"})
+        st.markdown(f'<div class="result-box">{info["emoji"]} Rekomendasi: <u>{pred.upper()}</u></div>', unsafe_allow_html=True)
 
-        inp    = np.array([[N,P,K,suhu,lembab,ph,hujan]])
-        inp_sc = scaler.transform(inp)
-        pred   = model.predict(inp_sc)[0]
-        proba  = model.predict_proba(inp_sc)[0]
-        top5   = [(kelas[i],proba[i]) for i in np.argsort(proba)[::-1][:5]]
-        info   = TANAMAN.get(pred,{"emoji":"🌿","musim":"-","singkat":"-"})
-        conf   = proba[list(kelas).index(pred)]
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("#### Detail Tanaman")
+            st.info(f"**Musim:** {info['musim']}")
+            st.info(f"**Catatan:** {info['catatan']}")
+            st.success(f"**Kepercayaan Model:** {proba[list(classes).index(pred)]:.1%}")
+        with col_b:
+            st.markdown("#### Top-5 Kandidat")
+            fig_bar = go.Figure(go.Bar(
+                x=[f"{CROP_INFO.get(c,{}).get('emoji','🌿')} {c}" for c, _ in top5_crops],
+                y=[p * 100 for _, p in top5_crops],
+                marker_color=["#2d6a4f" if c == pred else "#95d5b2" for c, _ in top5_crops],
+                text=[f"{p:.1%}" for _, p in top5_crops],
+                textposition="outside",
+            ))
+            fig_bar.update_layout(
+                yaxis_title="Probabilitas (%)", height=300,
+                margin=dict(t=10, b=10), plot_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
-        st.markdown("---")
-        col_h, col_d = st.columns([1,1])
+        # Perbandingan input vs rata-rata tanaman terprediksi
+        st.markdown("#### Perbandingan Input vs Profil Ideal")
+        crop_mean = df[df["label"] == pred][FITUR_COLS].mean()
+        input_vals = [N, P, K, temp, hum, ph, rainfall]
+        labels_radar = list(FITUR_LABEL.values())
 
-        with col_h:
-            # Kartu hasil utama
-            st.markdown(f"""
-            <div class="hasil-utama">
-              <span class="hasil-emoji">{info['emoji']}</span>
-              <div class="hasil-nama">{pred.upper()}</div>
-              <div class="hasil-cocok">Tingkat Kecocokan: <b>{conf:.0%}</b></div>
-              <span class="hasil-tag">🗓️ Musim {info['musim']}</span>
-              <span class="hasil-tag">ℹ️ {info['singkat']}</span>
-            </div>""", unsafe_allow_html=True)
+        fig_radar = go.Figure()
+        fig_radar.add_trace(go.Scatterpolar(
+            r=list(crop_mean), theta=labels_radar, fill="toself",
+            name=f"Profil Ideal {pred}", line_color="#2d6a4f"
+        ))
+        fig_radar.add_trace(go.Scatterpolar(
+            r=input_vals, theta=labels_radar, fill="toself",
+            name="Input Anda", line_color="#f77f00", opacity=0.7
+        ))
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True)),
+            height=380, margin=dict(t=20, b=20)
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
 
-            # Top-5 bar
-            st.markdown("##### 🏆 Peringkat Kecocokan")
-            WARNA = ["#1B4332","#2D6A4F","#40916C","#74C69D","#B7E4C7"]
-            for i,(nama,pct) in enumerate(top5):
-                ti = TANAMAN.get(nama,{"emoji":"🌿"})
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'font-size:.83rem;margin-bottom:4px">'
-                    f'<span><b>#{i+1}</b> {ti["emoji"]} {nama.capitalize()}</span>'
-                    f'<span style="font-weight:700;color:{WARNA[i]}">{pct:.0%}</span></div>'
-                    + bar_html(pct*100, WARNA[i]),
-                    unsafe_allow_html=True)
-
-        with col_d:
-            # Tabel status parameter
-            st.markdown("##### 📋 Status Kondisi Lahan vs Profil Ideal")
-            ideal = df[df["label"]==pred][FITUR].mean()
-            vals  = [N,P,K,suhu,lembab,ph,hujan]
-            rows  = "".join([
-                f"<tr><td>{F_NAMA[f]}</td><td><b>{v} {F_SATUAN[f]}</b></td>"
-                f"<td style='color:#6B7280'>{ideal[f]:.1f}</td>"
-                f"<td><span class='{cek_status(v,ideal[f])[1]}'>{cek_status(v,ideal[f])[0]}</span></td></tr>"
-                for f,v in zip(FITUR,vals)
-            ])
-            st.markdown(f"""<table class="tabel-param">
-              <thead><tr><th>Parameter</th><th>Nilai Anda</th><th>Nilai Ideal</th><th>Status</th></tr></thead>
-              <tbody>{rows}</tbody></table>""", unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            # Radar
-            norm = lambda v,f: (v-F_MIN[f])/(F_MAX[f]-F_MIN[f])*100
-            fig  = go.Figure()
-            lbl  = [F_NAMA[f] for f in FITUR]
-            fig.add_trace(go.Scatterpolar(r=[norm(ideal[f],f) for f in FITUR],theta=lbl,
-                fill="toself",name=f"Ideal ({pred})",line_color="#2D6A4F",fillcolor="rgba(45,106,79,.15)"))
-            fig.add_trace(go.Scatterpolar(r=[norm(v,f) for v,f in zip(vals,FITUR)],theta=lbl,
-                fill="toself",name="Lahan Anda",line_color="#F77F00",fillcolor="rgba(247,127,0,.1)"))
-            fig.update_layout(polar=dict(radialaxis=dict(visible=True,range=[0,100])),
-                              showlegend=True,height=280,margin=dict(t=20,b=20,l=20,r=20))
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Zona ekologi
-        st.markdown("---")
-        st.markdown("##### 🗺️ Zona Ekologi Lahan Anda")
-        km,km_sc,km_lb,sil,_,centers = latih_cluster(df,4)
-        raw   = km_sc.inverse_transform(centers)
-        zona  = km.predict(km_sc.transform(inp))[0]
-        df_z  = df.copy(); df_z["zona"] = km.predict(km_sc.transform(df[FITUR]))
-
-        cols_z = st.columns(4)
-        for i in range(4):
-            nz = nama_zona(raw[i],i); wz = warna_zona(i)
-            aktif = (i==zona)
-            border = f"3px solid {wz}" if aktif else f"1px solid {wz}40"
-            bg = f"{wz}18" if aktif else "white"
-            with cols_z[i]:
-                st.markdown(f"""<div style="border:{border};background:{bg};border-radius:14px;
-                    padding:14px;text-align:center">
-                  <div style="font-size:.7rem;font-weight:700;color:{wz};min-height:16px">
-                    {'📍 Zona Anda' if aktif else ''}</div>
-                  <div style="font-size:.9rem;font-weight:700;color:#1B4332;margin-top:4px">{nz}</div>
-                  <div style="font-size:.72rem;color:#6B7280;margin-top:6px">
-                    Hujan {raw[i][6]:.0f}mm · Lembab {raw[i][4]:.0f}%</div>
-                </div>""", unsafe_allow_html=True)
-
-        top_c = df_z[df_z["zona"]==zona]["label"].value_counts().head(6)
-        st.markdown("**Tanaman yang umum berhasil di zona ini:**  " +
-                    "  ·  ".join([f"{TANAMAN.get(c,{}).get('emoji','🌿')} {c.capitalize()}" for c in top_c.index]))
-
-
-# ══════════════════════════════════════════════════════════════
-# PETA ZONA
-# ══════════════════════════════════════════════════════════════
-elif menu == "🗺️  Peta Zona Lahan":
-    st.markdown('<div class="section-hd">🗺️ Peta Zona Ekologi Lahan</div>', unsafe_allow_html=True)
-
-    n_zona = st.sidebar.slider("Jumlah Zona (K)",2,8,4)
-    km,km_sc,km_lb,sil,X_pca,centers = latih_cluster(df,n_zona)
-    raw   = km_sc.inverse_transform(centers)
-    df_z  = df.copy(); df_z["Zona"]=km_lb
-    df_z["PCA1"]=X_pca[:,0]; df_z["PCA2"]=X_pca[:,1]
-    df_z["Nama Zona"] = df_z["Zona"].apply(lambda i: nama_zona(raw[i],i))
-
-    c1,c2,c3 = st.columns(3)
-    c1.metric("Jumlah Zona",n_zona)
-    c2.metric("Silhouette Score",f"{sil:.3f}")
-    c3.metric("Kualitas","Baik ✅" if sil>0.30 else "Cukup ⚠️")
     st.markdown("---")
-
-    tab1,tab2,tab3,tab4 = st.tabs(["📍 Visualisasi PCA","📋 Profil Zona","📈 Elbow Method","🔍 Cari Zona Lahan"])
+    st.markdown("### Performa Model")
+    tab1, tab2, tab3 = st.tabs(["Akurasi & CV", "Confusion Matrix", "Feature Importance"])
 
     with tab1:
-        st.markdown('<div class="section-sub">Setiap titik = 1 data lahan, warna = zona yang ditetapkan</div>',
-                    unsafe_allow_html=True)
-        fig = px.scatter(df_z,x="PCA1",y="PCA2",color="Nama Zona",hover_data={"label":True,"PCA1":False,"PCA2":False},
-                         color_discrete_sequence=px.colors.qualitative.Set2,height=480)
-        fig.update_traces(marker=dict(size=5,opacity=0.75))
-        fig.update_layout(plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE")
-        st.plotly_chart(fig,use_container_width=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Akurasi Test Set", f"{clf_acc:.2%}")
+        c2.metric("CV Mean (5-fold)", f"{cv_scores.mean():.2%}")
+        c3.metric("CV Std Dev", f"±{cv_scores.std():.2%}")
+
+        fig_cv = go.Figure()
+        fig_cv.add_trace(go.Bar(
+            x=[f"Fold {i+1}" for i in range(len(cv_scores))],
+            y=cv_scores * 100, marker_color="#2d6a4f",
+            text=[f"{s:.1%}" for s in cv_scores], textposition="outside"
+        ))
+        fig_cv.add_hline(y=cv_scores.mean()*100, line_dash="dash", line_color="#f77f00",
+                         annotation_text=f"Mean: {cv_scores.mean():.1%}")
+        fig_cv.update_layout(yaxis_title="Akurasi (%)", height=300,
+                             margin=dict(t=10, b=10), plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_cv, use_container_width=True)
 
     with tab2:
-        profil = df_z.groupby("Zona")[FITUR].mean().round(1)
-        profil.index = [nama_zona(raw[i],i) for i in profil.index]
-        profil.columns = [F_NAMA[f] for f in FITUR]
-        st.dataframe(profil,use_container_width=True)
-        st.markdown("#### Persebaran Tanaman per Zona")
-        cd = pd.crosstab(df_z["Nama Zona"],df_z["label"])
-        fig2 = px.imshow(cd,text_auto=True,color_continuous_scale="YlGn",height=320)
-        fig2.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig2,use_container_width=True)
+        fig_cm, ax = plt.subplots(figsize=(14, 12))
+        sns.heatmap(clf_cm, annot=True, fmt="d", cmap="Greens",
+                    xticklabels=classes, yticklabels=classes, ax=ax,
+                    linewidths=0.5, linecolor="white")
+        ax.set_xlabel("Prediksi", fontsize=12)
+        ax.set_ylabel("Aktual", fontsize=12)
+        ax.tick_params(axis="x", rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig_cm)
 
     with tab3:
-        st.markdown('<div class="tips">Cari titik "siku" pada grafik Inertia — itulah K optimal.</div>',
-                    unsafe_allow_html=True)
-        iner,sils = [],[]
-        X_s = km_sc.transform(df[FITUR])
-        for k in range(2,11):
-            km_t=KMeans(n_clusters=k,random_state=42,n_init=10); lb=km_t.fit_predict(X_s)
-            iner.append(km_t.inertia_); sils.append(silhouette_score(X_s,lb))
-        fig3 = make_subplots(specs=[[{"secondary_y":True}]])
-        fig3.add_trace(go.Scatter(x=list(range(2,11)),y=iner,mode="lines+markers",name="Inertia",
-                                  line=dict(color="#2D6A4F",width=2.5),marker=dict(size=8)),secondary_y=False)
-        fig3.add_trace(go.Scatter(x=list(range(2,11)),y=sils,mode="lines+markers",name="Silhouette",
-                                  line=dict(color="#F59E0B",width=2.5,dash="dash"),marker=dict(size=8)),secondary_y=True)
-        fig3.update_xaxes(title_text="Jumlah Zona (K)")
-        fig3.update_yaxes(title_text="Inertia",secondary_y=False)
-        fig3.update_yaxes(title_text="Silhouette Score",secondary_y=True)
-        fig3.update_layout(height=360,plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE")
-        st.plotly_chart(fig3,use_container_width=True)
-        st.info(f"💡 K optimal: **K = {list(range(2,11))[np.argmax(sils)]}** (Silhouette tertinggi: {max(sils):.3f})")
+        feat_imp = pd.DataFrame({
+            "Fitur": list(FITUR_LABEL.values()),
+            "Importance": importances
+        }).sort_values("Importance", ascending=True)
 
-    with tab4:
-        st.markdown("#### Masukkan Data Lahan untuk Mengetahui Zonanya")
-        c1,c2 = st.columns(2)
-        with c1:
-            N2=st.slider("N",0,140,50,key="z_n"); P2=st.slider("P",5,145,53,key="z_p")
-            K2=st.slider("K",5,205,48,key="z_k"); T2=st.slider("Suhu",8.0,44.0,25.0,key="z_t")
-        with c2:
-            H2=st.slider("Kelembaban",14.0,100.0,71.0,key="z_h")
-            PH2=st.slider("pH",3.5,10.0,6.5,key="z_ph"); R2=st.slider("Curah Hujan",20.0,300.0,100.0,key="z_r")
-        if st.button("🗺️ Cari Zona",use_container_width=True,key="btn_z"):
-            inp2=np.array([[N2,P2,K2,T2,H2,PH2,R2]]); z=km.predict(km_sc.transform(inp2))[0]
-            nz=nama_zona(raw[z],z); wz=warna_zona(z)
-            st.markdown(f"""<div style="background:{wz}18;border:2px solid {wz};border-radius:14px;
-                padding:20px;text-align:center;margin-top:12px">
-              <div style="font-size:1.4rem;font-weight:800;color:{wz}">{nz}</div>
-              <div style="color:#374151;font-size:.85rem;margin-top:8px">
-                Hujan rata-rata {raw[z][6]:.0f}mm · Kelembaban {raw[z][4]:.0f}% · Suhu {raw[z][3]:.0f}°C
-              </div></div>""", unsafe_allow_html=True)
-            top_z = df_z[df_z["Zona"]==z]["label"].value_counts().head(5)
-            st.markdown("**Tanaman umum di zona ini:**  " +
-                        "  ·  ".join([f"{TANAMAN.get(c,{}).get('emoji','🌿')} {c.capitalize()}" for c in top_z.index]))
+        fig_imp = go.Figure(go.Bar(
+            x=feat_imp["Importance"] * 100, y=feat_imp["Fitur"],
+            orientation="h", marker_color="#2d6a4f",
+            text=[f"{v:.1f}%" for v in feat_imp["Importance"] * 100],
+            textposition="outside"
+        ))
+        fig_imp.update_layout(
+            xaxis_title="Feature Importance (%)", height=380,
+            margin=dict(t=10, b=10, r=80), plot_bgcolor="rgba(0,0,0,0)"
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
 
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN CLUSTERING ══════════
+# ─────────────────────────────────────────────
+elif menu == "Clustering":
+    st.markdown("## Fitur 2: Pengelompokan Lahan (Clustering)")
+    st.markdown("K-Means mengelompokkan lahan berdasarkan kemiripan profil tanah & iklim.")
 
-# ══════════════════════════════════════════════════════════════
-# ANALISIS DATA
-# ══════════════════════════════════════════════════════════════
-elif menu == "📊  Analisis Data":
-    st.markdown('<div class="section-hd">📊 Analisis Data & Performa Model</div>', unsafe_allow_html=True)
+    n_clust = st.sidebar.slider("Jumlah Klaster (K)", 2, 10, 5)
+    km_model, km_scaler, km_labels, sil_score, X_pca = train_clustering(df, n_clust)
 
-    tab1,tab2,tab3,tab4 = st.tabs(["📈 Performa Model","🔥 Feature Importance","🔗 Korelasi","📦 Distribusi"])
+    df_clust = df.copy()
+    df_clust["Klaster"] = km_labels
+    df_clust["PCA1"]    = X_pca[:, 0]
+    df_clust["PCA2"]    = X_pca[:, 1]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Jumlah Klaster", n_clust)
+    c2.metric("Silhouette Score", f"{sil_score:.3f}")
+    c3.metric("Interpretasi", "Baik ✅" if sil_score > 0.35 else "Cukup ⚠️")
+
+    st.markdown("---")
+    tab1, tab2, tab3, tab4 = st.tabs(["Visualisasi PCA", "Profil Klaster", "Elbow Method", "Identifikasi Lahan"])
 
     with tab1:
-        c1,c2,c3=st.columns(3)
-        c1.metric("Akurasi Test Set",f"{akurasi:.2%}")
-        c2.metric("CV Mean (5-fold)",f"{cv_scores.mean():.2%}")
-        c3.metric("CV Std Dev",f"±{cv_scores.std():.2%}")
-        cl,cr = st.columns(2)
-        with cl:
-            st.markdown("#### Skor tiap Fold")
-            fig=go.Figure(go.Bar(x=[f"Fold {i+1}" for i in range(len(cv_scores))],
-                y=cv_scores*100,marker_color="#2D6A4F",
-                text=[f"{s:.1%}" for s in cv_scores],textposition="outside"))
-            fig.add_hline(y=cv_scores.mean()*100,line_dash="dash",line_color="#F77F00",
-                          annotation_text=f"Rata-rata: {cv_scores.mean():.1%}")
-            fig.update_layout(yaxis_title="Akurasi (%)",height=300,
-                              plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE",margin=dict(t=30,b=10))
-            st.plotly_chart(fig,use_container_width=True)
-        with cr:
-            st.markdown("#### Confusion Matrix")
-            fig2,ax=plt.subplots(figsize=(10,9))
-            sns.heatmap(cm,annot=True,fmt="d",cmap="Greens",xticklabels=kelas,yticklabels=kelas,ax=ax,
-                        linewidths=.5,linecolor="white")
-            ax.set_xlabel("Prediksi",fontsize=11); ax.set_ylabel("Aktual",fontsize=11)
-            ax.tick_params(axis="x",rotation=45,labelsize=8); ax.tick_params(axis="y",labelsize=8)
-            plt.tight_layout(); st.pyplot(fig2)
+        st.markdown("#### Distribusi Klaster (Proyeksi PCA 2D)")
+        colors = px.colors.qualitative.Set2
+        fig_pca = go.Figure()
+        for k in range(n_clust):
+            mask = df_clust["Klaster"] == k
+            fig_pca.add_trace(go.Scatter(
+                x=df_clust[mask]["PCA1"], y=df_clust[mask]["PCA2"],
+                mode="markers", name=f"Klaster {k+1}",
+                marker=dict(color=colors[k % len(colors)], size=5, opacity=0.7),
+                text=df_clust[mask]["label"],
+                hovertemplate="<b>%{text}</b><br>PC1: %{x:.2f}<br>PC2: %{y:.2f}"
+            ))
+        fig_pca.update_layout(
+            xaxis_title="Principal Component 1", yaxis_title="Principal Component 2",
+            height=450, plot_bgcolor="rgba(0,0,0,0)"
+        )
+        st.plotly_chart(fig_pca, use_container_width=True)
 
     with tab2:
-        st.markdown("#### Seberapa Besar Pengaruh Tiap Parameter?")
-        st.markdown('<div class="tips">Parameter dengan nilai lebih tinggi lebih berpengaruh dalam menentukan tanaman yang cocok untuk lahan Anda.</div>',
-                    unsafe_allow_html=True)
-        fi=pd.DataFrame({"Fitur":[F_NAMA[f] for f in FITUR],"Skor":importances}).sort_values("Skor",ascending=True)
-        fig=go.Figure(go.Bar(x=fi["Skor"]*100,y=fi["Fitur"],orientation="h",marker_color="#2D6A4F",
-                             text=[f"{v:.1f}%" for v in fi["Skor"]*100],textposition="outside"))
-        fig.update_layout(xaxis_title="Tingkat Pengaruh (%)",height=380,
-                          plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE",margin=dict(t=10,b=10,r=80))
-        st.plotly_chart(fig,use_container_width=True)
+        st.markdown("#### Profil Rata-Rata Setiap Klaster")
+        cluster_profile = df_clust.groupby("Klaster")[FITUR_COLS].mean().round(2)
+        cluster_profile.index = [f"Klaster {k+1}" for k in cluster_profile.index]
+        st.dataframe(cluster_profile.rename(columns=FITUR_LABEL), use_container_width=True)
+
+        st.markdown("#### Distribusi Tanaman per Klaster")
+        crop_dist = pd.crosstab(df_clust["Klaster"], df_clust["label"])
+        crop_dist.index = [f"Klaster {k+1}" for k in crop_dist.index]
+        fig_heat = px.imshow(
+            crop_dist, text_auto=True, color_continuous_scale="Greens",
+            labels=dict(x="Tanaman", y="Klaster", color="Jumlah"),
+            height=350
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+        st.markdown("#### Radar Profil Klaster")
+        # Normalisasi untuk radar
+        cluster_norm = (cluster_profile - cluster_profile.min()) / (cluster_profile.max() - cluster_profile.min() + 1e-9)
+        fig_radar = go.Figure()
+        for k in range(n_clust):
+            row = cluster_norm.iloc[k]
+            fig_radar.add_trace(go.Scatterpolar(
+                r=list(row) + [row.iloc[0]],
+                theta=list(FITUR_LABEL.values()) + [list(FITUR_LABEL.values())[0]],
+                mode="lines", name=f"Klaster {k+1}",
+                line_color=colors[k % len(colors)]
+            ))
+        fig_radar.update_layout(height=420)
+        st.plotly_chart(fig_radar, use_container_width=True)
 
     with tab3:
-        st.markdown("#### Hubungan Antar Parameter Lahan")
-        st.markdown('<div class="section-sub">Merah = keduanya naik bersama. Biru = satu naik satu turun.</div>',
-                    unsafe_allow_html=True)
-        corr=df[FITUR].corr(); corr.columns=[F_NAMA[f] for f in FITUR]; corr.index=[F_NAMA[f] for f in FITUR]
-        fig=px.imshow(corr,text_auto=".2f",color_continuous_scale="RdBu_r",zmin=-1,zmax=1,height=460)
-        st.plotly_chart(fig,use_container_width=True)
+        st.markdown("#### 📐 Elbow Method — Menentukan K Optimal")
+        inertias, sil_scores = [], []
+        k_range = range(2, 11)
+        with st.spinner("Menghitung Elbow & Silhouette..."):
+            X_sc = km_scaler.transform(df[FITUR_COLS])
+            for k in k_range:
+                km_tmp = KMeans(n_clusters=k, random_state=42, n_init=10)
+                lbl = km_tmp.fit_predict(X_sc)
+                inertias.append(km_tmp.inertia_)
+                sil_scores.append(silhouette_score(X_sc, lbl))
+
+        fig_elbow = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_elbow.add_trace(go.Scatter(
+            x=list(k_range), y=inertias, mode="lines+markers",
+            name="Inertia (WCSS)", line=dict(color="#2d6a4f", width=2),
+            marker=dict(size=8)
+        ), secondary_y=False)
+        fig_elbow.add_trace(go.Scatter(
+            x=list(k_range), y=sil_scores, mode="lines+markers",
+            name="Silhouette Score", line=dict(color="#f77f00", width=2, dash="dash"),
+            marker=dict(size=8)
+        ), secondary_y=True)
+        fig_elbow.update_xaxes(title_text="Jumlah Klaster (K)")
+        fig_elbow.update_yaxes(title_text="Inertia (WCSS)", secondary_y=False)
+        fig_elbow.update_yaxes(title_text="Silhouette Score", secondary_y=True)
+        fig_elbow.update_layout(height=380, plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_elbow, use_container_width=True)
+        best_k = list(k_range)[np.argmax(sil_scores)]
+        st.info(f"💡 K optimal berdasarkan Silhouette Score tertinggi: **K = {best_k}**")
 
     with tab4:
-        feat_sel=st.selectbox("Pilih Parameter",[F_NAMA[f] for f in FITUR])
-        feat_key=[f for f in FITUR if F_NAMA[f]==feat_sel][0]
-        fig=px.box(df,x="label",y=feat_key,color="label",
-                   color_discrete_sequence=px.colors.qualitative.Set2,
-                   labels={feat_key:feat_sel,"label":"Tanaman"},height=480)
-        fig.update_layout(showlegend=False,xaxis_tickangle=-45,
-                          plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE")
-        st.plotly_chart(fig,use_container_width=True)
-        stats=df.groupby("label")[feat_key].agg(["min","mean","max"]).round(1)
-        stats.columns=["Minimum","Rata-rata","Maksimum"]
-        st.dataframe(stats,use_container_width=True,height=280)
+        st.markdown("#### Identifikasi Klaster Lahan Baru")
+        col1, col2 = st.columns(2)
+        with col1:
+            N2 = st.slider("N", 0, 140, 50, key="cn")
+            P2 = st.slider("P", 5, 145, 53, key="cp")
+            K2 = st.slider("K", 5, 205, 48, key="ck")
+            temp2 = st.slider("Suhu", 8.0, 44.0, 25.0, key="ct")
+        with col2:
+            hum2 = st.slider("Kelembaban", 14.0, 100.0, 71.0, key="ch")
+            ph2  = st.slider("pH", 3.5, 10.0, 6.5, key="cp2")
+            rain2 = st.slider("Curah Hujan", 20.0, 300.0, 100.0, key="cr")
 
+        if st.button("Identifikasi Klaster", key="cluster_btn", use_container_width=True):
+            inp = np.array([[N2, P2, K2, temp2, hum2, ph2, rain2]])
+            inp_sc = km_scaler.transform(inp)
+            cluster_id = km_model.predict(inp_sc)[0]
+            st.success(f" Lahan Anda masuk ke **Klaster {cluster_id + 1}**")
+            st.dataframe(
+                cluster_profile.iloc[cluster_id:cluster_id+1].rename(columns=FITUR_LABEL),
+                use_container_width=True
+            )
+            crops_in_cluster = df_clust[df_clust["Klaster"] == cluster_id]["label"].value_counts().head(5)
+            st.markdown("**Tanaman umum di klaster ini:**")
+            for crop, cnt in crops_in_cluster.items():
+                info = CROP_INFO.get(crop, {"emoji": "🌿"})
+                st.write(f"- {info['emoji']} {crop.capitalize()} ({cnt} sampel)")
 
-# ══════════════════════════════════════════════════════════════
-# ANALISIS LANJUTAN
-# ══════════════════════════════════════════════════════════════
-elif menu == "🔬  Analisis Lanjutan":
-    st.markdown('<div class="section-hd">🔬 Analisis Lanjutan</div>', unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN WHAT-IF ANALYSIS ══════════
+# ─────────────────────────────────────────────
+elif menu == " What-If Analysis":
+    st.markdown("## What-If Analysis")
+    st.markdown("Simulasikan **perubahan parameter** dan lihat bagaimana rekomendasi berubah secara real-time.")
 
-    tab1,tab2 = st.tabs(["🔄 Simulasi Perubahan Parameter","📡 Sensitivitas Fitur"])
+    st.markdown("### Kondisi Dasar")
+    col1, col2, col3, col4 = st.columns(4)
+    base_N    = col1.number_input("N Dasar", 0, 140, 50)
+    base_P    = col1.number_input("P Dasar", 5, 145, 53)
+    base_K    = col2.number_input("K Dasar", 5, 205, 48)
+    base_temp = col2.number_input("Suhu Dasar (°C)", 8.0, 44.0, 25.0)
+    base_hum  = col3.number_input("Kelembaban Dasar (%)", 14.0, 100.0, 71.0)
+    base_ph   = col3.number_input("pH Dasar", 3.5, 10.0, 6.5)
+    base_rain = col4.number_input("Curah Hujan Dasar (mm)", 20.0, 300.0, 100.0)
+
+    base_input = [base_N, base_P, base_K, base_temp, base_hum, base_ph, base_rain]
+    base_sc = clf_scaler.transform([base_input])
+    base_pred = clf_model.predict(base_sc)[0]
+    base_proba = clf_model.predict_proba(base_sc)[0]
+    info_base = CROP_INFO.get(base_pred, {"emoji": "🌿"})
+    st.info(f"**Rekomendasi Dasar:** {info_base['emoji']} **{base_pred.upper()}** (kepercayaan: {base_proba[list(classes).index(base_pred)]:.1%})")
+
+    st.markdown("---")
+    st.markdown("### Parameter yang Diubah")
+
+    fitur_ubah = st.selectbox("Pilih Parameter", list(FITUR_LABEL.values()))
+    fitur_key = [k for k, v in FITUR_LABEL.items() if v == fitur_ubah][0]
+    idx = FITUR_COLS.index(fitur_key)
+    base_val = base_input[idx]
+
+    min_v, max_v = df[fitur_key].min(), df[fitur_key].max()
+    n_steps = st.slider("Jumlah Skenario", 5, 30, 15)
+    vals = np.linspace(min_v, max_v, n_steps)
+
+    results = []
+    for v in vals:
+        inp = base_input.copy()
+        inp[idx] = v
+        inp_sc = clf_scaler.transform([inp])
+        pred = clf_model.predict(inp_sc)[0]
+        proba = clf_model.predict_proba(inp_sc)[0]
+        top_conf = proba.max()
+        results.append({"Nilai": round(v, 2), "Rekomendasi": pred, "Kepercayaan": top_conf})
+
+    df_what = pd.DataFrame(results)
+
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.markdown("#### Perubahan Rekomendasi")
+        fig_what = go.Figure()
+        unique_crops = df_what["Rekomendasi"].unique()
+        color_map = {c: px.colors.qualitative.Set2[i % 8] for i, c in enumerate(unique_crops)}
+
+        for crop in unique_crops:
+            mask = df_what["Rekomendasi"] == crop
+            sub = df_what[mask]
+            fig_what.add_trace(go.Scatter(
+                x=sub["Nilai"], y=sub["Kepercayaan"] * 100,
+                mode="markers+lines", name=crop,
+                line=dict(color=color_map[crop], width=2),
+                marker=dict(size=8),
+            ))
+        fig_what.update_layout(
+            xaxis_title=fitur_ubah, yaxis_title="Kepercayaan (%)",
+            height=380, plot_bgcolor="rgba(0,0,0,0)"
+        )
+        st.plotly_chart(fig_what, use_container_width=True)
+
+    with col_right:
+        st.markdown("#### Tabel Skenario")
+        df_display = df_what.copy()
+        df_display["Emoji"] = df_display["Rekomendasi"].map(lambda c: CROP_INFO.get(c, {}).get("emoji", "🌿"))
+        df_display["Kepercayaan"] = df_display["Kepercayaan"].map(lambda x: f"{x:.1%}")
+        st.dataframe(df_display[["Nilai", "Emoji", "Rekomendasi", "Kepercayaan"]], use_container_width=True, height=380)
+
+    # Ringkasan titik perubahan
+    transitions = []
+    for i in range(1, len(df_what)):
+        if df_what.loc[i, "Rekomendasi"] != df_what.loc[i-1, "Rekomendasi"]:
+            transitions.append({
+                "Dari": df_what.loc[i-1, "Rekomendasi"],
+                "Ke": df_what.loc[i, "Rekomendasi"],
+                "Pada": f"{df_what.loc[i, 'Nilai']:.2f}"
+            })
+    if transitions:
+        st.markdown("#### ⚡ Titik Perubahan Rekomendasi")
+        st.dataframe(pd.DataFrame(transitions), use_container_width=True)
+    else:
+        st.success("Rekomendasi stabil — tidak berubah di seluruh rentang nilai.")
+
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN SENSITIVITY ANALYSIS ══════════
+# ─────────────────────────────────────────────
+elif menu == "Sensitivity Analysis":
+    st.markdown("## Sensitivity Analysis")
+    st.markdown("Analisis seberapa sensitif rekomendasi terhadap perubahan **setiap fitur** dari kondisi dasar.")
+
+    st.markdown("### Kondisi Dasar")
+    c1, c2, c3 = st.columns(3)
+    N_s    = c1.slider("N", 0, 140, 50, key="s_n")
+    P_s    = c1.slider("P", 5, 145, 53, key="s_p")
+    K_s    = c1.slider("K", 5, 205, 48, key="s_k")
+    temp_s = c2.slider("Suhu", 8.0, 44.0, 25.0, key="s_t")
+    hum_s  = c2.slider("Kelembaban", 14.0, 100.0, 71.0, key="s_h")
+    ph_s   = c3.slider("pH", 3.5, 10.0, 6.5, key="s_ph")
+    rain_s = c3.slider("Curah Hujan", 20.0, 300.0, 100.0, key="s_r")
+
+    base = [N_s, P_s, K_s, temp_s, hum_s, ph_s, rain_s]
+    base_sc = clf_scaler.transform([base])
+    base_pred = clf_model.predict(base_sc)[0]
+    base_proba = clf_model.predict_proba(base_sc)[0][list(classes).index(base_pred)]
+
+    st.info(f"**Rekomendasi Dasar:** {CROP_INFO.get(base_pred,{}).get('emoji','🌿')} **{base_pred.upper()}** | Kepercayaan: {base_proba:.1%}")
+
+    pct_changes = [-30, -20, -10, 0, 10, 20, 30]
+    sens_results = {}
+
+    with st.spinner("Menghitung sensitivity..."):
+        for i, fitur in enumerate(FITUR_COLS):
+            vals = []
+            for pct in pct_changes:
+                inp = base.copy()
+                inp[i] = inp[i] * (1 + pct / 100)
+                inp_sc = clf_scaler.transform([inp])
+                p = clf_model.predict_proba(inp_sc)[0]
+                # kepercayaan untuk tanaman dasar
+                base_idx = list(classes).index(base_pred)
+                vals.append(p[base_idx] * 100)
+            sens_results[fitur] = vals
+
+    # Heatmap sensitivitas
+    st.markdown("#### Heatmap Sensitivitas")
+    sens_df = pd.DataFrame(sens_results, index=[f"{p:+d}%" for p in pct_changes])
+    sens_df.columns = list(FITUR_LABEL.values())
+
+    fig_heat = px.imshow(
+        sens_df, text_auto=".1f", color_continuous_scale="RdYlGn",
+        labels=dict(x="Fitur", y="Perubahan (%)", color="Kepercayaan (%)"),
+        height=350, zmin=0, zmax=100
+    )
+    st.plotly_chart(fig_heat, use_container_width=True)
+
+    # Grafik garis sensitivity per fitur
+    st.markdown("#### Grafik Sensitivity per Fitur")
+    fig_lines = go.Figure()
+    for fitur, label in FITUR_LABEL.items():
+        fig_lines.add_trace(go.Scatter(
+            x=[f"{p:+d}%" for p in pct_changes],
+            y=sens_results[fitur], mode="lines+markers",
+            name=label
+        ))
+    fig_lines.add_hline(y=base_proba * 100, line_dash="dash",
+                        annotation_text="Baseline", line_color="black")
+    fig_lines.update_layout(
+        xaxis_title="Perubahan dari Kondisi Dasar",
+        yaxis_title=f"Kepercayaan untuk '{base_pred}' (%)",
+        height=420, plot_bgcolor="rgba(0,0,0,0)"
+    )
+    st.plotly_chart(fig_lines, use_container_width=True)
+
+    # Skor sensitivitas total per fitur (std dari perubahan kepercayaan)
+    st.markdown("#### Ranking Sensitivitas Fitur")
+    sens_scores = {FITUR_LABEL[f]: np.std(sens_results[f]) for f in FITUR_COLS}
+    sens_rank = pd.DataFrame(list(sens_scores.items()), columns=["Fitur", "Skor Sensitivitas"]).sort_values("Skor Sensitivitas", ascending=False)
+    sens_rank["Interpretasi"] = sens_rank["Skor Sensitivitas"].apply(
+        lambda x: "🔴 Sangat Sensitif" if x > 10 else ("🟡 Cukup Sensitif" if x > 5 else "🟢 Stabil")
+    )
+    st.dataframe(sens_rank, use_container_width=True, hide_index=True)
+
+    fig_rank = go.Figure(go.Bar(
+        x=sens_rank["Skor Sensitivitas"],
+        y=sens_rank["Fitur"],
+        orientation="h",
+        marker_color=["#d62728" if s > 10 else "#ff7f0e" if s > 5 else "#2ca02c"
+                      for s in sens_rank["Skor Sensitivitas"]],
+        text=[f"{s:.2f}" for s in sens_rank["Skor Sensitivitas"]],
+        textposition="outside"
+    ))
+    fig_rank.update_layout(xaxis_title="Skor Sensitivitas (Std Dev Kepercayaan)",
+                           height=350, margin=dict(t=10, r=80), plot_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig_rank, use_container_width=True)
+
+# ─────────────────────────────────────────────
+# ══════════ HALAMAN EKSPLORASI DATA ══════════
+# ─────────────────────────────────────────────
+elif menu == "Eksplorasi Data":
+    st.markdown("## Eksplorasi Dataset")
+
+    st.markdown("### Statistik Deskriptif")
+    st.dataframe(df.describe().round(2), use_container_width=True)
+
+    st.markdown("---")
+    tab1, tab2, tab3 = st.tabs(["Distribusi Fitur", "Matriks Korelasi", "Boxplot per Tanaman"])
 
     with tab1:
-        st.markdown("#### Simulasi: Apa yang Terjadi Jika Satu Parameter Diubah?")
-        st.markdown('<div class="tips">Atur kondisi dasar lahan, lalu pilih satu parameter yang ingin disimulasikan. Grafik akan menunjukkan bagaimana rekomendasi berubah.</div>',
-                    unsafe_allow_html=True)
-        st.markdown("**Kondisi Dasar**")
-        c1,c2,c3,c4=st.columns(4)
-        bN=c1.number_input("N",0,140,50,key="wN"); bP=c1.number_input("P",5,145,53,key="wP")
-        bK=c2.number_input("K",5,205,48,key="wK"); bT=c2.number_input("Suhu",8.0,44.0,25.0,key="wT")
-        bH=c3.number_input("Kelembaban",14.0,100.0,71.0,key="wH")
-        bPH=c3.number_input("pH",3.5,10.0,6.5,key="wPH")
-        bR=c4.number_input("Curah Hujan",20.0,300.0,100.0,key="wR")
-
-        base=[bN,bP,bK,bT,bH,bPH,bR]
-        bpred=model.predict(scaler.transform([base]))[0]
-        bconf=model.predict_proba(scaler.transform([base]))[0][list(kelas).index(bpred)]
-        st.info(f"**Rekomendasi Dasar:** {TANAMAN.get(bpred,{}).get('emoji','🌿')} **{bpred.upper()}** — Kecocokan {bconf:.0%}")
-
-        st.markdown("---")
-        pu=st.selectbox("Parameter yang Disimulasikan",[F_NAMA[f] for f in FITUR])
-        pk=[f for f in FITUR if F_NAMA[f]==pu][0]; idx_p=FITUR.index(pk)
-        ns=st.slider("Jumlah Titik Simulasi",5,30,15)
-        vals=np.linspace(df[pk].min(),df[pk].max(),ns)
-        rows=[]
-        for v in vals:
-            inp2=base.copy(); inp2[idx_p]=v; sc2=scaler.transform([inp2])
-            pd2=model.predict(sc2)[0]; pp2=model.predict_proba(sc2)[0]
-            rows.append({"Nilai":round(v,2),"Tanaman":pd2,"Kecocokan":pp2.max()})
-        dw=pd.DataFrame(rows)
-
-        cl,cr=st.columns([2,1])
-        with cl:
-            fig=go.Figure()
-            for crop in dw["Tanaman"].unique():
-                sub=dw[dw["Tanaman"]==crop]; ei=TANAMAN.get(crop,{"emoji":"🌿"})
-                fig.add_trace(go.Scatter(x=sub["Nilai"],y=sub["Kecocokan"]*100,
-                    mode="lines+markers",name=f"{ei['emoji']} {crop}",
-                    line=dict(width=2.5),marker=dict(size=8)))
-            fig.update_layout(xaxis_title=pu,yaxis_title="Kecocokan (%)",
-                              height=380,plot_bgcolor="#FAFFFE",paper_bgcolor="#FAFFFE")
-            st.plotly_chart(fig,use_container_width=True)
-        with cr:
-            disp=dw.copy()
-            disp["Kecocokan"]=disp["Kecocokan"].map(lambda x:f"{x:.0%}")
-            disp["Tanaman"]=disp["Tanaman"].apply(lambda c:f"{TANAMAN.get(c,{}).get('emoji','🌿')} {c.capitalize()}")
-            st.dataframe(disp,use_container_width=True,height=380)
-
-        perubahan=[{"Dari":dw.loc[i-1,"Tanaman"],"Ke":dw.loc[i,"Tanaman"],pu:dw.loc[i,"Nilai"]}
-                   for i in range(1,len(dw)) if dw.loc[i,"Tanaman"]!=dw.loc[i-1,"Tanaman"]]
-        if perubahan:
-            st.warning(f"**⚡ {len(perubahan)} titik perubahan rekomendasi** ditemukan:")
-            st.dataframe(pd.DataFrame(perubahan),use_container_width=True)
-        else:
-            st.success("✅ Rekomendasi tetap stabil di seluruh rentang nilai parameter ini.")
+        fitur_sel = st.selectbox("Pilih Fitur", list(FITUR_LABEL.values()))
+        key = [k for k, v in FITUR_LABEL.items() if v == fitur_sel][0]
+        fig_hist = px.histogram(df, x=key, color="label", nbins=40, barmode="overlay",
+                                color_discrete_sequence=px.colors.qualitative.Set3,
+                                labels={key: fitur_sel}, height=400)
+        fig_hist.update_layout(plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_hist, use_container_width=True)
 
     with tab2:
-        st.markdown("#### Sensitivitas: Parameter Mana yang Paling Berpengaruh?")
-        st.markdown('<div class="tips">Nilai merah = rekomendasi berubah drastis jika parameter ini diubah. Nilai hijau = rekomendasi stabil.</div>',
-                    unsafe_allow_html=True)
-        c1,c2,c3=st.columns(3)
-        sN=c1.slider("N",0,140,50,key="sN"); sP=c1.slider("P",5,145,53,key="sP")
-        sK=c2.slider("K",5,205,48,key="sK"); sT=c2.slider("Suhu",8.0,44.0,25.0,key="sT")
-        sH=c3.slider("Kelembaban",14.0,100.0,71.0,key="sH")
-        sPH=c3.slider("pH",3.5,10.0,6.5,key="sPH"); sR=c3.slider("Curah Hujan",20.0,300.0,100.0,key="sR")
+        corr = df[FITUR_COLS].corr()
+        fig_corr = px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu_r",
+                             zmin=-1, zmax=1, height=450)
+        st.plotly_chart(fig_corr, use_container_width=True)
 
-        base_s=[sN,sP,sK,sT,sH,sPH,sR]
-        bpred_s=model.predict(scaler.transform([base_s]))[0]
-        bprob_s=model.predict_proba(scaler.transform([base_s]))[0][list(kelas).index(bpred_s)]
-        st.info(f"**Rekomendasi Dasar:** {TANAMAN.get(bpred_s,{}).get('emoji','🌿')} **{bpred_s.upper()}** — Kecocokan {bprob_s:.0%}")
+    with tab3:
+        fitur_box = st.selectbox("Pilih Fitur untuk Boxplot", list(FITUR_LABEL.values()), key="box")
+        key_box = [k for k, v in FITUR_LABEL.items() if v == fitur_box][0]
+        fig_box = px.box(df, x="label", y=key_box, color="label",
+                         color_discrete_sequence=px.colors.qualitative.Set2,
+                         labels={key_box: fitur_box, "label": "Tanaman"}, height=450)
+        fig_box.update_layout(showlegend=False, xaxis_tickangle=-45, plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_box, use_container_width=True)
 
-        pcts=[-30,-20,-10,0,10,20,30]; sens={}
-        for i,f in enumerate(FITUR):
-            vals=[]
-            for pct in pcts:
-                inp3=base_s.copy(); inp3[i]*=(1+pct/100)
-                p3=model.predict_proba(scaler.transform([inp3]))[0][list(kelas).index(bpred_s)]
-                vals.append(p3*100)
-            sens[f]=vals
+    st.markdown("---")
+    st.markdown("### Data Mentah")
+    filter_crop = st.multiselect("Filter berdasarkan tanaman", sorted(df["label"].unique()), default=[])
+    df_show = df[df["label"].isin(filter_crop)] if filter_crop else df
+    st.dataframe(df_show, use_container_width=True, height=350)
+    st.caption(f"Menampilkan {len(df_show):,} dari {len(df):,} baris")
 
-        sens_df=pd.DataFrame(sens,index=[f"{p:+d}%" for p in pcts])
-        sens_df.columns=[F_NAMA[f] for f in FITUR]
-        fig=px.imshow(sens_df,text_auto=".0f",color_continuous_scale="RdYlGn",
-                      height=340,zmin=0,zmax=100,labels=dict(color="Kecocokan (%)"))
-        fig.update_layout(xaxis_tickangle=-30)
-        st.plotly_chart(fig,use_container_width=True)
-
-        skor={F_NAMA[f]:round(np.std(sens[f]),2) for f in FITUR}
-        rank=pd.DataFrame(list(skor.items()),columns=["Parameter","Skor Sensitivitas"]
-                          ).sort_values("Skor Sensitivitas",ascending=False)
-        rank["Interpretasi"]=rank["Skor Sensitivitas"].apply(
-            lambda x:"🔴 Sangat Sensitif" if x>10 else("🟡 Cukup Sensitif" if x>5 else "🟢 Stabil"))
-        st.dataframe(rank,use_container_width=True,hide_index=True)
-
-
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # FOOTER
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<div style='text-align:center;color:#9CA3AF;font-size:.8rem;padding:8px'>"
-    "🌾 AgroSPK · Kelompok 5 · Sistem Pendukung Keputusan · "
+    "<div style='text-align:center; color:#52796f; font-size:0.8rem;'>"
+    "SPK Rekomendasi Tanaman — Klasifikasi & Clustering dengan Data Mining | "
     "Dataset: Crop Recommendation (2.200 sampel, 22 tanaman)"
-    "</div>", unsafe_allow_html=True)
+    "</div>",
+    unsafe_allow_html=True
+)
