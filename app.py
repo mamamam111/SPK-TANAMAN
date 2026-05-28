@@ -146,9 +146,10 @@ FITUR_LABEL = {
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("D:\ITB TEKNIK INDUSTRI\SEMESTER 6\DSS\TUBES\Crop_recommendation.csv",sep=',')
+        # Gunakan relative path (hanya panggil nama filenya saja)
+        df = pd.read_csv("Crop_recommendation.csv", sep=',')
     except FileNotFoundError:
-        st.error(f" File `{"Crop_recommendation.csv"}` tidak ditemukan. Pastikan file CSV ada di folder yang sama dengan script ini.")
+        st.error("File `Crop_recommendation.csv` tidak ditemukan. Pastikan file CSV ada di folder yang sama dengan script ini.")
         st.stop()
     return df
 
